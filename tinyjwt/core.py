@@ -1,5 +1,6 @@
 """Core encode/decode/verify for HS256 JWTs (RFC 7519 / RFC 7515)."""
 import base64
+from collections.abc import Iterable
 import hashlib
 import hmac
 import json
@@ -12,6 +13,10 @@ class InvalidTokenError(Exception):
 
 class ExpiredTokenError(InvalidTokenError):
     """Raised when a token's exp claim is in the past."""
+
+
+class InvalidAudienceError(InvalidTokenError):
+    """Raised when a token's aud claim is missing, malformed, or does not match."""
 
 
 def _b64e(data: bytes) -> str:
@@ -61,7 +66,43 @@ def verify(token: str, key: str) -> bool:
     return expected == s
 
 
-def decode(token: str, key: str) -> dict:
+def _validate_aud(claims: dict, audience: str | Iterable[str] | None) -> None:
+    if "aud" not in claims:
+        if audience is not None:
+            raise InvalidAudienceError("missing audience claim")
+        return
+
+    token_aud = claims["aud"]
+    if isinstance(token_aud, str):
+        if not token_aud:
+            raise InvalidAudienceError("invalid audience claim")
+        token_audiences = [token_aud]
+    elif isinstance(token_aud, list):
+        if not token_aud or not all(isinstance(a, str) and a for a in token_aud):
+            raise InvalidAudienceError("invalid audience claim")
+        token_audiences = token_aud
+    else:
+        raise InvalidAudienceError("invalid audience claim")
+
+    if audience is None:
+        raise InvalidAudienceError("unexpected audience claim")
+
+    if isinstance(audience, str):
+        if not audience:
+            raise InvalidAudienceError("invalid expected audience")
+        expected_audiences = [audience]
+    elif isinstance(audience, Iterable) and not isinstance(audience, (bytes, dict)):
+        expected_audiences = list(audience)
+        if not expected_audiences or not all(isinstance(a, str) and a for a in expected_audiences):
+            raise InvalidAudienceError("invalid expected audience")
+    else:
+        raise InvalidAudienceError("invalid expected audience")
+
+    if not any(aud in token_audiences for aud in expected_audiences):
+        raise InvalidAudienceError("audience mismatch")
+
+
+def decode(token: str, key: str, audience: str | Iterable[str] | None = None) -> dict:
     """Verify a token and return its claims."""
     if not verify(token, key):
         raise InvalidTokenError("signature verification failed")
@@ -77,4 +118,5 @@ def decode(token: str, key: str) -> dict:
         raise ExpiredTokenError("token expired")
     if "nbf" in claims and now < claims["nbf"]:
         raise InvalidTokenError("token not yet valid")
+    _validate_aud(claims, audience)
     return claims
