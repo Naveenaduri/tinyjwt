@@ -63,7 +63,10 @@ def verify(token: str, key: str) -> bool:
     if alg != "HS256":
         raise InvalidTokenError(f"unsupported alg {alg!r}")
     expected = _b64e(_sign(f"{h}.{p}".encode(), key.encode()))
-    return expected == s
+    try:
+        return hmac.compare_digest(expected, s)
+    except TypeError:
+        return False
 
 
 def _validate_aud(claims: dict, audience: str | Iterable[str] | None) -> None:
