@@ -61,7 +61,7 @@ def verify(token: str, key: str) -> bool:
     return expected == s
 
 
-def decode(token: str, key: str) -> dict:
+def decode(token: str, key: str, issuer: str | None = None) -> dict:
     """Verify a token and return its claims."""
     if not verify(token, key):
         raise InvalidTokenError("signature verification failed")
@@ -77,4 +77,6 @@ def decode(token: str, key: str) -> dict:
         raise ExpiredTokenError("token expired")
     if "nbf" in claims and now < claims["nbf"]:
         raise InvalidTokenError("token not yet valid")
+    if issuer is not None and claims.get("iss") != issuer:
+        raise InvalidTokenError("invalid issuer")
     return claims
